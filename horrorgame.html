@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Escape the Horror</title>
+    <style>
+        body { margin: 0; overflow: hidden; }
+        canvas { display: block; }
+        #instructions {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: white;
+            font-family: Arial, sans-serif;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 10px;
+        }
+        #coinCounter {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            color: gold;
+            font-family: Arial, sans-serif;
+            font-size: 24px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 5px 10px;
+        }
+    </style>
+</head>
+<body>
+    <div id="instructions">
+        Use WASD to move. Escape the monster!<br>
+        Collect gold coins to increase your score.
+    </div>
+    <div id="coinCounter">Coins: 0</div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r134/three.min.js"></script>
+    <script>
+        // Scene setup
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x000000);
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        // Lighting
+        const pointLight = new THREE.PointLight(0xffffff, 0.5, 50);
+        pointLight.position.set(0, 1, 0);
+        camera.add(pointLight);
+        scene.add(camera);
+
+        // Player
+        camera.position.set(0, 1, 0);
+        let moveForward = false, moveBackward = false, moveLeft = false, moveRight = false;
+        const playerSpeed = 0.1;
+
+        // Gold coins
+        const coinGeometry = new THREE.BoxGeometry(0.5, 0.5, 0.5);
+        const coinMaterial = new THREE.MeshBasicMaterial({ color: 0xffd700 });
+        const coins = [];
+        const initialCoinPositions = [
+            [10, 0, 10], [20, 0, -15], [-25, 0, 30], [35, 0, 0], [-10, 0, -40] // Far apart in big landscape
+        ];
+        initialCoinPositions.forEach(pos => {
+            const coin = new THREE.Mesh(coinGeometry, coinMaterial);
+            coin.position.set(pos[0], pos[1], pos[2]);
+            scene.add(coin);
+            coins.push(coin);
+        });
+        let coinCount = 0;
+        const coinCounter = document.getElementById('coinCounter');
+
+        function spawnNewCoin() {
+            const x = Math.random() * 100 - 50; // -50 to 50
+            const z = Math.random() * 100 - 50; // -50 to 50
+            const coin = new THREE.Mesh(coinGeometry, coinMaterial);
+            coin.position.set(x, 0, z);
+            scene.add(coin);
+            coins.push(coin);
+        }
+
+        // Monster
+        const monsterTexture = new THREE.TextureLoader().load(
+            'fettywap.png' // Replace with your PNG path
+        );
+        const monsterMaterial = new THREE.SpriteMaterial({ map: monsterTexture });
+        const monster = new THREE.Sprite(monsterMaterial);
+        monster.scale.set(2, 2, 1);
+        monster.position.set(50, 1, 50); // Far away in big landscape
+        scene.add(monster);
+
+        // Monster movement
+        let monsterSpeed = 0.03;
+        function moveMonster() {
+            const dx = camera.position.x - monster.position.x;
+            const dz = camera.position.z - monster.position.z;
+            const distance = Math.sqrt(dx * dx + dz * dz);
+            if (distance > 0.1) {
+                monster.position.x += (dx / distance) * monsterSpeed;
+                monster.position.z += (dz / distance) * monsterSpeed;
+            }
+            if (distance < 0.5) {
+                if (confirm("The monster caught you! Restart?")) resetGame();
+            }
+        }
+
+        // Sound: Fetty Wap - Trap Queen
+        const audio = new Audio('trapqueen.mp3');
+        audio.loop = true;
+        audio.volume = 0.5;
+        audio.play().catch(() => console.log("Click to enable sound"));
+
+        // Controls
+        document.addEventListener('keydown', (event) => {
+            switch (event.key) {
+                case 'w': moveForward = true; break;
+                case 's': moveBackward = true; break;
+                case 'a': moveLeft = true; break;
+                case 'd': moveRight = true; break;
+            }
+        });
+        document.addEventListener('keyup', (event) => {
+            switch (event.key) {
+                case 'w': moveForward = false; break;
+                case 's': moveBackward = false; break;
+                case 'a': moveLeft = false; break;
+                case 'd': moveRight = false; break;
+            }
+        });
+
+        // Movement and coin collection
+        function updatePlayer() {
+            const direction = new THREE.Vector3();
+            camera.getWorldDirection(direction);
+            direction.y = 0;
+            direction.normalize();
+
+            const sideDirection = new THREE.Vector3();
+            sideDirection.crossVectors(direction, new THREE.Vector3(0, 1, 0)).normalize();
+
+            let velocityX = 0, velocityZ = 0;
+            if (moveForward) {
+                velocityX += direction.x * playerSpeed;
+                velocityZ += direction.z * playerSpeed;
+            }
+            if (moveBackward) {
+                velocityX -= direction.x * playerSpeed;
+                velocityZ -= direction.z * playerSpeed;
+            }
+            if (moveLeft) {
+                velocityX -= sideDirection.x * playerSpeed;
+                velocityZ -= sideDirection.z * playerSpeed;
+            }
+            if (moveRight) {
+                velocityX += sideDirection.x * playerSpeed;
+                velocityZ += sideDirection.z * playerSpeed;
+            }
+
+            camera.position.x += velocityX;
+            camera.position.z += velocityZ;
+
+            // Coin collection (fixed distance check)
+            for (let i = coins.length - 1; i >= 0; i--) {
+                const coin = coins[i];
+                const dx = camera.position.x - coin.position.x;
+                const dz = camera.position.z - coin.position.z;
+                const distance = Math.sqrt(dx * dx + dz * dz);
+                if (distance < 1) { // Increased pickup range
+                    scene.remove(coin);
+                    coins.splice(i, 1);
+                    coinCount++;
+                    coinCounter.textContent = `Coins: ${coinCount}`;
+                    spawnNewCoin(); // Spawn a new coin
+                }
+            }
+        }
+
+        // Mouse look
+        document.addEventListener('mousemove', (event) => {
+            camera.rotation.y -= event.movementX * 0.002;
+        });
+        renderer.domElement.requestPointerLock();
+        document.addEventListener('click', () => {
+            renderer.domElement.requestPointerLock();
+            audio.play();
+        });
+
+        // Reset game
+        function resetGame() {
+            camera.position.set(0, 1, 0);
+            monster.position.set(50, 1, 50);
+            coinCount = 0;
+            coinCounter.textContent = `Coins: ${coinCount}`;
+            coins.forEach(coin => scene.remove(coin));
+            coins.length = 0;
+            initialCoinPositions.forEach(pos => {
+                const coin = new THREE.Mesh(coinGeometry, coinMaterial);
+                coin.position.set(pos[0], pos[1], pos[2]);
+                scene.add(coin);
+                coins.push(coin);
+            });
+        }
+
+        // Animation loop
+        function animate() {
+            requestAnimationFrame(animate);
+            updatePlayer();
+            moveMonster();
+            renderer.render(scene, camera);
+        }
+        animate();
+
+        // Resize handler
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+    </script>
+</body>
+</html>
