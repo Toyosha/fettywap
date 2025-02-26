@@ -25,9 +25,19 @@
             background: rgba(0, 0, 0, 0.7);
             padding: 5px 10px;
         }
+        #background {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            z-index: -1;
+        }
     </style>
 </head>
 <body>
+    <img id="background" src="background.gif" alt="background">
     <div id="instructions">
         Use WASD to move. Escape the monster!<br>
         Collect gold coins to increase your score.
@@ -37,9 +47,9 @@
     <script>
         // Scene setup
         const scene = new THREE.Scene();
-        scene.background = new THREE.Color(0x000000);
+        scene.background = null; // Transparent for GIF
         const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-        const renderer = new THREE.WebGLRenderer();
+        const renderer = new THREE.WebGLRenderer({ alpha: true });
         renderer.setSize(window.innerWidth, window.innerHeight);
         document.body.appendChild(renderer.domElement);
 
@@ -59,7 +69,7 @@
         const coinMaterial = new THREE.MeshBasicMaterial({ color: 0xffd700 });
         const coins = [];
         const initialCoinPositions = [
-            [10, 0, 10], [20, 0, -15], [-25, 0, 30], [35, 0, 0], [-10, 0, -40] // Far apart in big landscape
+            [10, 0, 10], [20, 0, -15], [-25, 0, 30], [35, 0, 0], [-10, 0, -40]
         ];
         initialCoinPositions.forEach(pos => {
             const coin = new THREE.Mesh(coinGeometry, coinMaterial);
@@ -71,8 +81,8 @@
         const coinCounter = document.getElementById('coinCounter');
 
         function spawnNewCoin() {
-            const x = Math.random() * 100 - 50; // -50 to 50
-            const z = Math.random() * 100 - 50; // -50 to 50
+            const x = Math.random() * 100 - 50;
+            const z = Math.random() * 100 - 50;
             const coin = new THREE.Mesh(coinGeometry, coinMaterial);
             coin.position.set(x, 0, z);
             scene.add(coin);
@@ -80,17 +90,15 @@
         }
 
         // Monster
-        const monsterTexture = new THREE.TextureLoader().load(
-            'fettywap.png' // Replace with your PNG path
-        );
+        const monsterTexture = new THREE.TextureLoader().load('mymonster.png');
         const monsterMaterial = new THREE.SpriteMaterial({ map: monsterTexture });
         const monster = new THREE.Sprite(monsterMaterial);
         monster.scale.set(2, 2, 1);
-        monster.position.set(50, 1, 50); // Far away in big landscape
+        monster.position.set(50, 1, 50);
         scene.add(monster);
 
         // Monster movement
-        let monsterSpeed = 0.03;
+        const monsterSpeed = playerSpeed * 0.9;
         function moveMonster() {
             const dx = camera.position.x - monster.position.x;
             const dz = camera.position.z - monster.position.z;
@@ -102,13 +110,23 @@
             if (distance < 0.5) {
                 if (confirm("The monster caught you! Restart?")) resetGame();
             }
+            updateAudio(distance); // Update volume based on distance
         }
 
-        // Sound: Fetty Wap - Trap Queen
+        // Sound with distance-based volume (no panning)
         const audio = new Audio('trapqueen.mp3');
         audio.loop = true;
-        audio.volume = 0.5;
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        const source = audioContext.createMediaElementSource(audio);
+        const gainNode = audioContext.createGain();
+        source.connect(gainNode).connect(audioContext.destination); // No panner
         audio.play().catch(() => console.log("Click to enable sound"));
+
+        function updateAudio(distance) {
+            const maxDistance = 50; // Volume drops off over 50 units
+            const volume = Math.max(0, Math.min(1, 1 - (distance / maxDistance)));
+            gainNode.gain.value = volume;
+        }
 
         // Controls
         document.addEventListener('keydown', (event) => {
@@ -159,18 +177,17 @@
             camera.position.x += velocityX;
             camera.position.z += velocityZ;
 
-            // Coin collection (fixed distance check)
             for (let i = coins.length - 1; i >= 0; i--) {
                 const coin = coins[i];
                 const dx = camera.position.x - coin.position.x;
                 const dz = camera.position.z - coin.position.z;
                 const distance = Math.sqrt(dx * dx + dz * dz);
-                if (distance < 1) { // Increased pickup range
+                if (distance < 1) {
                     scene.remove(coin);
                     coins.splice(i, 1);
                     coinCount++;
                     coinCounter.textContent = `Coins: ${coinCount}`;
-                    spawnNewCoin(); // Spawn a new coin
+                    spawnNewCoin();
                 }
             }
         }
@@ -183,6 +200,7 @@
         document.addEventListener('click', () => {
             renderer.domElement.requestPointerLock();
             audio.play();
+            audioContext.resume();
         });
 
         // Reset game
